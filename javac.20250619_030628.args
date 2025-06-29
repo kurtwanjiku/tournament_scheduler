@@ -1,0 +1,8 @@
+--module-path
+"C:\\Program Files\\Java\\javafx-sdk-24.0.1\\lib"
+--add-modules
+javafx.controls
+-d
+out
+src/tournament/scheduler/TournamentSchedulerGUI.java
+src/module-info.java
