@@ -18,19 +18,86 @@ public class TournamentSchedulerGUI extends Application {
     private Label promptLabel;
     private Button nextButton;
     private TextArea scheduleArea;
+    private VBox mainLayout;
+    private ListView<String> existingTeamsListView;
     
     @Override
     public void start(Stage primaryStage) {
         dbManager = new DatabaseManager();
-        // Clear any existing teams when starting fresh
-        dbManager.deleteAllTeams();
         
         primaryStage.setTitle("Tournament Scheduler");
 
         // Create main layout
-        VBox mainLayout = new VBox(10);
+        mainLayout = new VBox(10);
         mainLayout.setPadding(new Insets(10));
         mainLayout.setAlignment(Pos.CENTER);
+
+        // Check for existing teams
+        List<Team> existingTeams = dbManager.getAllTeams();
+        
+        if (!existingTeams.isEmpty()) {
+            showExistingTeamsScreen(existingTeams);
+        } else {
+            showNewTeamInputScreen();
+        }
+
+        // Create scene
+        Scene scene = new Scene(mainLayout, 500, 600);
+        primaryStage.setScene(scene);
+        primaryStage.show();
+    }
+
+    private void showExistingTeamsScreen(List<Team> existingTeams) {
+        // Clear previous content
+        mainLayout.getChildren().clear();
+
+        // Add header label
+        Label headerLabel = new Label("Existing Teams Found");
+        headerLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+
+        // Create ListView for existing teams
+        existingTeamsListView = new ListView<>();
+        existingTeamsListView.setPrefHeight(200);
+        for (Team team : existingTeams) {
+            existingTeamsListView.getItems().add(team.getName());
+        }
+
+        // Create buttons
+        Button useExistingButton = new Button("Use Existing Teams");
+        Button startFreshButton = new Button("Start Fresh");
+        
+        HBox buttonBox = new HBox(10);
+        buttonBox.setAlignment(Pos.CENTER);
+        buttonBox.getChildren().addAll(useExistingButton, startFreshButton);
+
+        // Add components to layout
+        mainLayout.getChildren().addAll(
+            headerLabel,
+            new Label("Found " + existingTeams.size() + " teams in database:"),
+            existingTeamsListView,
+            buttonBox
+        );
+
+        // Button handlers
+        useExistingButton.setOnAction(e -> {
+            if (existingTeams.size() == NUM_TEAMS) {
+                generateAndDisplaySchedule();
+            } else {
+                showAlert("Incorrect number of teams", 
+                         "Found " + existingTeams.size() + " teams, but need exactly " + NUM_TEAMS + " teams.\n" +
+                         "Please start fresh to enter " + NUM_TEAMS + " teams.");
+            }
+        });
+
+        startFreshButton.setOnAction(e -> {
+            dbManager.deleteAllTeams();
+            showNewTeamInputScreen();
+        });
+    }
+
+    private void showNewTeamInputScreen() {
+        // Clear previous content
+        mainLayout.getChildren().clear();
 
         // Create input section
         promptLabel = new Label("Enter name for Team 1:");
@@ -55,11 +122,6 @@ public class TournamentSchedulerGUI extends Application {
             nextButton,
             scheduleArea
         );
-
-        // Create scene
-        Scene scene = new Scene(mainLayout, 500, 600);
-        primaryStage.setScene(scene);
-        primaryStage.show();
     }
 
     private void processTeamName() {
@@ -72,7 +134,15 @@ public class TournamentSchedulerGUI extends Application {
 
         // Save team to database
         Team team = new Team(teamName);
-        dbManager.saveTeam(team);
+        try {
+            dbManager.saveTeam(team);
+        } catch (RuntimeException e) {
+            if (e.getMessage().contains("UNIQUE constraint failed")) {
+                showAlert("Team name '" + teamName + "' already exists. Please use a different name.");
+                return;
+            }
+            throw e;
+        }
         
         currentTeamIndex++;
         teamNameField.clear();
@@ -80,17 +150,27 @@ public class TournamentSchedulerGUI extends Application {
         if (currentTeamIndex < NUM_TEAMS) {
             promptLabel.setText("Enter name for Team " + (currentTeamIndex + 1) + ":");
         } else {
-            // All teams entered, generate and display schedule
             generateAndDisplaySchedule();
         }
     }
 
     private void generateAndDisplaySchedule() {
         // Hide input controls and show schedule
-        promptLabel.setVisible(false);
-        teamNameField.setVisible(false);
-        nextButton.setVisible(false);
+        mainLayout.getChildren().clear();
+
+        // Add header
+        Label headerLabel = new Label("Tournament Schedule");
+        headerLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
+        mainLayout.getChildren().add(headerLabel);
+
+        // Create and show schedule area
+        scheduleArea = new TextArea();
+        scheduleArea.setEditable(false);
+        scheduleArea.setPrefRowCount(20);
+        scheduleArea.setPrefColumnCount(40);
+        scheduleArea.setWrapText(true);
         scheduleArea.setVisible(true);
+        mainLayout.getChildren().add(scheduleArea);
 
         // Get teams from database
         List<Team> teams = dbManager.getAllTeams();
@@ -100,6 +180,15 @@ public class TournamentSchedulerGUI extends Application {
         
         List<Match> schedule = generateSchedule(teamNames);
         displaySchedule(schedule);
+
+        // Add a "New Tournament" button
+        Button newTournamentButton = new Button("Start New Tournament");
+        newTournamentButton.setOnAction(e -> {
+            dbManager.deleteAllTeams();
+            currentTeamIndex = 0;
+            showNewTeamInputScreen();
+        });
+        mainLayout.getChildren().add(newTournamentButton);
     }
 
     private void displaySchedule(List<Match> schedule) {
@@ -120,8 +209,12 @@ public class TournamentSchedulerGUI extends Application {
     }
 
     private void showAlert(String message) {
+        showAlert("Warning", message);
+    }
+
+    private void showAlert(String title, String message) {
         Alert alert = new Alert(Alert.AlertType.WARNING);
-        alert.setTitle("Warning");
+        alert.setTitle(title);
         alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
